@@ -14,6 +14,10 @@
   --ok: #3f9d6a;
 }
 
+html {
+  color-scheme: dark;
+}
+
 html,
 body {
   min-height: 100%;

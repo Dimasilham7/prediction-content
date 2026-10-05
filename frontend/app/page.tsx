@@ -17,6 +17,13 @@ const PLATFORMS: { id: Platform; label: string }[] = [
   { id: "both", label: "Keduanya" },
 ];
 
+const PROVIDERS: { id: SuggestionProvider; label: string }[] = [
+  { id: "rules", label: "Rules (tanpa API)" },
+  { id: "openai", label: "OpenAI" },
+  { id: "claude", label: "Claude" },
+  { id: "workers_ai", label: "Workers AI" },
+];
+
 export default function HomePage() {
   const [platform, setPlatform] = useState<Platform>("tiktok");
   const [caption, setCaption] = useState("");
@@ -244,7 +251,7 @@ export default function HomePage() {
               <span>
                 Pengaturan saran{" "}
                 <span className="text-[var(--muted)]">
-                  · {provider === "rules" ? "Rules (tanpa API)" : provider} · temp{" "}
+                  · {PROVIDERS.find((p) => p.id === provider)?.label ?? provider} · temp{" "}
                   {temperature.toFixed(2)}
                 </span>
               </span>
@@ -257,43 +264,48 @@ export default function HomePage() {
                   Rules gratis dan tanpa API. OpenAI / Claude dipakai hanya jika kamu isi API key
                   sendiri — key tidak disimpan di server.
                 </p>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <label className="block">
-                    <span className="text-sm text-[var(--muted)]">Provider</span>
-                    <select
-                      className={inputClass}
-                      value={provider}
-                      onChange={(e) => setProvider(e.target.value as SuggestionProvider)}
-                    >
-                      <option value="rules">Rules (tanpa API)</option>
-                      <option value="openai">OpenAI</option>
-                      <option value="claude">Claude (Anthropic)</option>
-                      <option value="workers_ai">Workers AI (Cloudflare)</option>
-                    </select>
-                  </label>
-                  <label className="block">
-                    <span className="flex justify-between text-sm text-[var(--muted)]">
-                      <span>Temperature</span>
-                      <span className="text-[var(--fg)]">{temperature.toFixed(2)}</span>
-                    </span>
-                    <input
-                      type="range"
-                      min={0}
-                      max={provider === "claude" ? 1 : 2}
-                      step={0.05}
-                      value={temperature}
-                      disabled={provider === "rules"}
-                      onChange={(e) => setTemperature(Number(e.target.value))}
-                      className="mt-3 w-full accent-[var(--accent)] disabled:opacity-40"
-                    />
-                    <span className="mt-1 block text-xs text-[var(--muted)]">
-                      {provider === "rules"
-                        ? "Tidak berpengaruh untuk Rules."
-                        : "Rendah = konsisten, tinggi = kreatif." +
-                          (provider === "claude" ? " Claude maks 1.0." : "")}
-                    </span>
-                  </label>
+                <div>
+                  <span className="text-sm text-[var(--muted)]">Provider</span>
+                  <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+                    {PROVIDERS.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setProvider(p.id)}
+                        className={`rounded-md border px-3 py-2 text-left text-sm transition ${
+                          provider === p.id
+                            ? "border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--fg)]"
+                            : "border-[var(--line)] bg-white/[0.03] text-[var(--muted)] hover:border-[var(--accent)]/50 hover:text-[var(--fg)]"
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
+
+                <label className="block">
+                  <span className="flex justify-between text-sm text-[var(--muted)]">
+                    <span>Temperature</span>
+                    <span className="text-[var(--fg)]">{temperature.toFixed(2)}</span>
+                  </span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={provider === "claude" ? 1 : 2}
+                    step={0.05}
+                    value={temperature}
+                    disabled={provider === "rules"}
+                    onChange={(e) => setTemperature(Number(e.target.value))}
+                    className="mt-3 w-full accent-[var(--accent)] disabled:opacity-40"
+                  />
+                  <span className="mt-1 block text-xs text-[var(--muted)]">
+                    {provider === "rules"
+                      ? "Tidak berpengaruh untuk Rules."
+                      : "Rendah = konsisten, tinggi = kreatif." +
+                        (provider === "claude" ? " Claude maks 1.0." : "")}
+                  </span>
+                </label>
 
                 {provider === "openai" && (
                   <label className="block">
