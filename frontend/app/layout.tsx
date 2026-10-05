@@ -24,8 +24,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="id">
-      <body className={`${display.variable} ${sans.variable} antialiased`}>
+    <html lang="id" suppressHydrationWarning>
+      <body
+        className={`${display.variable} ${sans.variable} antialiased`}
+        suppressHydrationWarning
+      >
         {children}
       </body>
     </html>
