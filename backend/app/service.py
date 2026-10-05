@@ -86,7 +86,7 @@ async def analyze_content(
 
         verdict, confidence = _verdict_from_answers(answers)
         violations = build_violations(
-            answers, sample_timestamps=media.sample_timestamps_sec
+            answers, sample_timestamps=media.sample_timestamps_sec, verdict=verdict
         )
         caption_issues = build_caption_issues(answers, hashtags)
 

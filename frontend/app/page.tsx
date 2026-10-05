@@ -1,42 +1,66 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ResultCard } from "@/components/ResultCard";
 import type { AnalyzeResponse, HealthResponse, SuggestionProvider } from "@/lib/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
+const inputClass =
+  "mt-1.5 w-full rounded-md border border-[var(--line)] bg-white/[0.03] px-3 py-2 outline-none transition focus:border-[var(--accent)] focus:bg-white/[0.05]";
+
+type Platform = "instagram" | "tiktok" | "both";
+
+const PLATFORMS: { id: Platform; label: string }[] = [
+  { id: "tiktok", label: "TikTok" },
+  { id: "instagram", label: "Instagram" },
+  { id: "both", label: "Keduanya" },
+];
+
 export default function HomePage() {
-  const [platform, setPlatform] = useState<"instagram" | "tiktok" | "both">(
-    "tiktok"
-  );
+  const [platform, setPlatform] = useState<Platform>("tiktok");
   const [caption, setCaption] = useState("");
   const [hashtags, setHashtags] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [dragging, setDragging] = useState(false);
   const [provider, setProvider] = useState<SuggestionProvider>("rules");
   const [temperature, setTemperature] = useState(0.3);
   const [openaiKey, setOpenaiKey] = useState("");
   const [claudeKey, setClaudeKey] = useState("");
   const [forceLocal, setForceLocal] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AnalyzeResponse | null>(null);
   const [health, setHealth] = useState<HealthResponse | null>(null);
+  const [healthFailed, setHealthFailed] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const resultRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetch(`${API_BASE}/api/health`)
       .then((r) => r.json())
       .then((d: HealthResponse) => setHealth(d))
-      .catch(() => setHealth(null));
+      .catch(() => setHealthFailed(true));
   }, []);
 
-  const previewUrl = useMemo(
-    () => (file ? URL.createObjectURL(file) : null),
-    [file]
-  );
+  const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
+
+  useEffect(() => {
+    if (provider === "claude" && temperature > 1) setTemperature(1);
+  }, [provider, temperature]);
+
+  const canSubmit = !loading && (caption.trim() || hashtags.trim() || file);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!canSubmit) return;
     setLoading(true);
     setError(null);
     setResult(null);
@@ -53,214 +77,357 @@ export default function HomePage() {
     if (file) body.set("file", file);
 
     try {
-      const res = await fetch(`${API_BASE}/api/analyze`, {
-        method: "POST",
-        body,
-      });
+      const res = await fetch(`${API_BASE}/api/analyze`, { method: "POST", body });
       if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || `HTTP ${res.status}`);
+        let detail = `HTTP ${res.status}`;
+        try {
+          const j = await res.json();
+          if (j?.detail) detail = String(j.detail);
+        } catch {
+          /* non-JSON error body */
+        }
+        throw new Error(detail);
       }
-      const data = (await res.json()) as AnalyzeResponse;
-      setResult(data);
+      setResult((await res.json()) as AnalyzeResponse);
+      if (window.matchMedia("(max-width: 1023px)").matches) {
+        requestAnimationFrame(() =>
+          resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+        );
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Gagal menganalisis");
+      setError(
+        err instanceof TypeError
+          ? "Backend tidak bisa dihubungi. Pastikan server berjalan di " + API_BASE
+          : err instanceof Error
+            ? err.message
+            : "Gagal menganalisis"
+      );
     } finally {
       setLoading(false);
     }
   }
 
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragging(false);
+    const f = e.dataTransfer.files?.[0];
+    if (f) setFile(f);
+  }
+
   return (
-    <main className="mx-auto min-h-screen max-w-5xl px-5 py-10 sm:px-8 sm:py-14">
-      <header className="animate-rise mb-12">
-        <p className="text-sm uppercase tracking-[0.28em] text-[var(--accent)]">
-          Prediction Content
-        </p>
-        <h1 className="mt-3 max-w-3xl font-display text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">
-          Cek kelayakan konten Instagram & TikTok sebelum publish
-        </h1>
-        <p className="mt-4 max-w-2xl text-lg text-[var(--muted)]">
-          Upload media + caption. Sistem memakai Clef (Workers AI) atau classifier
-          lokal, ffmpeg untuk nilai media, lalu menyarankan perbaikan — opsional
-          lewat OpenAI / Claude dengan temperature yang bisa kamu atur.
-        </p>
-        {health && (
-          <p className="mt-4 text-sm text-[var(--muted)]">
-            ffmpeg {health.ffmpeg_ok ? "✓" : "✗"} · ffprobe{" "}
-            {health.ffprobe_ok ? "✓" : "✗"} · Clef{" "}
-            {health.clef_configured ? "siap" : "belum dikonfigurasi"} · fallback
-            lokal {health.local_fallback ? "on" : "off"}
+    <main className="mx-auto min-h-screen max-w-7xl px-5 py-8 sm:px-8 lg:py-12">
+      <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-xs uppercase tracking-[0.28em] text-[var(--accent)]">
+            Prediction Content
           </p>
-        )}
+          <h1 className="mt-2 font-display text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">
+            Cek kelayakan konten sebelum publish
+          </h1>
+          <p className="mt-2 max-w-xl text-[var(--muted)]">
+            Upload media dan caption Instagram / TikTok. Hasilnya: layak atau tidak, apa yang
+            melanggar, dan apa yang perlu dibetulkan.
+          </p>
+        </div>
+        <StatusBar health={health} failed={healthFailed} />
       </header>
 
-      <form onSubmit={onSubmit} className="animate-rise space-y-8">
-        <div className="grid gap-6 md:grid-cols-2">
-          <label className="block">
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <form
+          onSubmit={onSubmit}
+          className="space-y-6 rounded-xl border border-[var(--line)] bg-white/[0.02] p-5 sm:p-6"
+        >
+          <div>
             <span className="text-sm text-[var(--muted)]">Platform</span>
-            <select
-              className="mt-2 w-full border border-[var(--line)] bg-transparent px-3 py-2 outline-none focus:border-[var(--accent)]"
-              value={platform}
-              onChange={(e) =>
-                setPlatform(e.target.value as "instagram" | "tiktok" | "both")
-              }
-            >
-              <option value="tiktok">TikTok</option>
-              <option value="instagram">Instagram</option>
-              <option value="both">Keduanya</option>
-            </select>
-          </label>
+            <div className="mt-1.5 grid grid-cols-3 gap-1 rounded-md border border-[var(--line)] p-1">
+              {PLATFORMS.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => setPlatform(p.id)}
+                  className={`rounded px-3 py-1.5 text-sm transition ${
+                    platform === p.id
+                      ? "bg-[var(--accent)] font-medium text-[var(--bg0)]"
+                      : "text-[var(--muted)] hover:text-[var(--fg)]"
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
-          <label className="block">
-            <span className="text-sm text-[var(--muted)]">Media (gambar/video)</span>
+          <div>
+            <span className="text-sm text-[var(--muted)]">Media (gambar / video)</span>
             <input
+              ref={fileInput}
               type="file"
               accept="image/*,video/*"
-              className="mt-2 block w-full text-sm file:mr-3 file:border-0 file:bg-[var(--accent)] file:px-3 file:py-2 file:text-[var(--bg0)]"
+              className="hidden"
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             />
-          </label>
-        </div>
-
-        {previewUrl && file && (
-          <div className="overflow-hidden border border-[var(--line)]">
-            {file.type.startsWith("video/") ? (
-              <video src={previewUrl} controls className="max-h-80 w-full object-contain" />
+            {file && previewUrl ? (
+              <div className="mt-1.5 overflow-hidden rounded-md border border-[var(--line)]">
+                {file.type.startsWith("video/") ? (
+                  <video src={previewUrl} controls className="max-h-64 w-full bg-black object-contain" />
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={previewUrl} alt="Preview" className="max-h-64 w-full bg-black object-contain" />
+                )}
+                <div className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                  <span className="truncate text-[var(--muted)]">
+                    {file.name} · {(file.size / 1024 / 1024).toFixed(1)} MB
+                  </span>
+                  <button
+                    type="button"
+                    className="shrink-0 text-[var(--bad)] hover:underline"
+                    onClick={() => {
+                      setFile(null);
+                      if (fileInput.current) fileInput.current.value = "";
+                    }}
+                  >
+                    Hapus
+                  </button>
+                </div>
+              </div>
             ) : (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={previewUrl}
-                alt="Preview"
-                className="max-h-80 w-full object-contain"
-              />
+              <button
+                type="button"
+                onClick={() => fileInput.current?.click()}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragging(true);
+                }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={onDrop}
+                className={`mt-1.5 flex w-full flex-col items-center justify-center rounded-md border border-dashed px-4 py-8 text-center transition ${
+                  dragging
+                    ? "border-[var(--accent)] bg-[var(--accent)]/10"
+                    : "border-[var(--line)] hover:border-[var(--accent)]/60"
+                }`}
+              >
+                <span className="font-medium">Klik atau seret file ke sini</span>
+                <span className="mt-1 text-xs text-[var(--muted)]">
+                  JPG, PNG, WEBP, MP4, MOV, WEBM · maks 50 MB · opsional
+                </span>
+              </button>
             )}
           </div>
-        )}
 
-        <label className="block">
-          <span className="text-sm text-[var(--muted)]">Caption</span>
-          <textarea
-            className="mt-2 min-h-28 w-full border border-[var(--line)] bg-transparent px-3 py-2 outline-none focus:border-[var(--accent)]"
-            value={caption}
-            onChange={(e) => setCaption(e.target.value)}
-            placeholder="Tulis caption postingan..."
-          />
-        </label>
+          <label className="block">
+            <span className="text-sm text-[var(--muted)]">Caption</span>
+            <textarea
+              className={`${inputClass} min-h-24`}
+              value={caption}
+              onChange={(e) => setCaption(e.target.value)}
+              placeholder="Tulis caption postingan..."
+            />
+          </label>
 
-        <label className="block">
-          <span className="text-sm text-[var(--muted)]">Hashtags</span>
-          <input
-            className="mt-2 w-full border border-[var(--line)] bg-transparent px-3 py-2 outline-none focus:border-[var(--accent)]"
-            value={hashtags}
-            onChange={(e) => setHashtags(e.target.value)}
-            placeholder="#fyp #creator ..."
-          />
-        </label>
+          <label className="block">
+            <span className="text-sm text-[var(--muted)]">Hashtag</span>
+            <input
+              className={inputClass}
+              value={hashtags}
+              onChange={(e) => setHashtags(e.target.value)}
+              placeholder="#fyp #creator ..."
+            />
+          </label>
 
-        <fieldset className="space-y-4 border border-[var(--line)] p-4">
-          <legend className="px-2 text-sm uppercase tracking-wider text-[var(--muted)]">
-            Saran perbaikan (opsional LLM)
-          </legend>
-          <p className="text-sm text-[var(--muted)]">
-            Default memakai rules (gratis, tanpa API). OpenAI / Claude hanya dipakai
-            jika kamu isi API key sendiri — tidak disimpan di server.
-          </p>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="block">
-              <span className="text-sm text-[var(--muted)]">Provider saran</span>
-              <select
-                className="mt-2 w-full border border-[var(--line)] bg-transparent px-3 py-2 outline-none focus:border-[var(--accent)]"
-                value={provider}
-                onChange={(e) =>
-                  setProvider(e.target.value as SuggestionProvider)
-                }
-              >
-                <option value="rules">Rules (tanpa API)</option>
-                <option value="openai">OpenAI</option>
-                <option value="claude">Claude (Anthropic)</option>
-                <option value="workers_ai">Workers AI (Cloudflare)</option>
-              </select>
-            </label>
-
-            <label className="block">
-              <span className="text-sm text-[var(--muted)]">
-                Temperature: {temperature.toFixed(2)}
+          <div className="rounded-md border border-[var(--line)]">
+            <button
+              type="button"
+              onClick={() => setShowAdvanced((s) => !s)}
+              className="flex w-full items-center justify-between px-4 py-3 text-sm"
+              aria-expanded={showAdvanced}
+            >
+              <span>
+                Pengaturan saran{" "}
+                <span className="text-[var(--muted)]">
+                  · {provider === "rules" ? "Rules (tanpa API)" : provider} · temp{" "}
+                  {temperature.toFixed(2)}
+                </span>
               </span>
-              <input
-                type="range"
-                min={0}
-                max={provider === "claude" ? 1 : 2}
-                step={0.05}
-                value={temperature}
-                onChange={(e) => setTemperature(Number(e.target.value))}
-                className="mt-3 w-full accent-[var(--accent)]"
-              />
-              <span className="mt-1 block text-xs text-[var(--muted)]">
-                Lebih rendah = saran lebih konsisten; lebih tinggi = lebih kreatif.
-                Claude max 1.0.
-              </span>
-            </label>
+              <span className="text-[var(--muted)]">{showAdvanced ? "−" : "+"}</span>
+            </button>
+
+            {showAdvanced && (
+              <div className="space-y-4 border-t border-[var(--line)] px-4 py-4">
+                <p className="text-xs text-[var(--muted)]">
+                  Rules gratis dan tanpa API. OpenAI / Claude dipakai hanya jika kamu isi API key
+                  sendiri — key tidak disimpan di server.
+                </p>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="block">
+                    <span className="text-sm text-[var(--muted)]">Provider</span>
+                    <select
+                      className={inputClass}
+                      value={provider}
+                      onChange={(e) => setProvider(e.target.value as SuggestionProvider)}
+                    >
+                      <option value="rules">Rules (tanpa API)</option>
+                      <option value="openai">OpenAI</option>
+                      <option value="claude">Claude (Anthropic)</option>
+                      <option value="workers_ai">Workers AI (Cloudflare)</option>
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="flex justify-between text-sm text-[var(--muted)]">
+                      <span>Temperature</span>
+                      <span className="text-[var(--fg)]">{temperature.toFixed(2)}</span>
+                    </span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={provider === "claude" ? 1 : 2}
+                      step={0.05}
+                      value={temperature}
+                      disabled={provider === "rules"}
+                      onChange={(e) => setTemperature(Number(e.target.value))}
+                      className="mt-3 w-full accent-[var(--accent)] disabled:opacity-40"
+                    />
+                    <span className="mt-1 block text-xs text-[var(--muted)]">
+                      {provider === "rules"
+                        ? "Tidak berpengaruh untuk Rules."
+                        : "Rendah = konsisten, tinggi = kreatif." +
+                          (provider === "claude" ? " Claude maks 1.0." : "")}
+                    </span>
+                  </label>
+                </div>
+
+                {provider === "openai" && (
+                  <label className="block">
+                    <span className="text-sm text-[var(--muted)]">OpenAI API key</span>
+                    <input
+                      type="password"
+                      autoComplete="off"
+                      className={inputClass}
+                      value={openaiKey}
+                      onChange={(e) => setOpenaiKey(e.target.value)}
+                      placeholder="sk-..."
+                    />
+                  </label>
+                )}
+                {provider === "claude" && (
+                  <label className="block">
+                    <span className="text-sm text-[var(--muted)]">Anthropic API key</span>
+                    <input
+                      type="password"
+                      autoComplete="off"
+                      className={inputClass}
+                      value={claudeKey}
+                      onChange={(e) => setClaudeKey(e.target.value)}
+                      placeholder="sk-ant-..."
+                    />
+                  </label>
+                )}
+
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="accent-[var(--accent)]"
+                    checked={forceLocal}
+                    onChange={(e) => setForceLocal(e.target.checked)}
+                  />
+                  Paksa classifier lokal (lewati Clef)
+                </label>
+              </div>
+            )}
           </div>
 
-          {provider === "openai" && (
-            <label className="block">
-              <span className="text-sm text-[var(--muted)]">OpenAI API key</span>
-              <input
-                type="password"
-                autoComplete="off"
-                className="mt-2 w-full border border-[var(--line)] bg-transparent px-3 py-2 outline-none focus:border-[var(--accent)]"
-                value={openaiKey}
-                onChange={(e) => setOpenaiKey(e.target.value)}
-                placeholder="sk-... (opsional, hanya untuk sesi ini)"
-              />
-            </label>
+          <button
+            type="submit"
+            disabled={!canSubmit}
+            className="w-full rounded-md bg-[var(--accent)] px-6 py-3 font-medium text-[var(--bg0)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {loading ? "Menganalisis…" : "Analisis kelayakan"}
+          </button>
+          {!canSubmit && !loading && (
+            <p className="-mt-3 text-center text-xs text-[var(--muted)]">
+              Isi caption, hashtag, atau upload media dulu.
+            </p>
           )}
+        </form>
 
-          {provider === "claude" && (
-            <label className="block">
-              <span className="text-sm text-[var(--muted)]">Anthropic API key</span>
-              <input
-                type="password"
-                autoComplete="off"
-                className="mt-2 w-full border border-[var(--line)] bg-transparent px-3 py-2 outline-none focus:border-[var(--accent)]"
-                value={claudeKey}
-                onChange={(e) => setClaudeKey(e.target.value)}
-                placeholder="sk-ant-... (opsional, hanya untuk sesi ini)"
-              />
-            </label>
-          )}
-
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={forceLocal}
-              onChange={(e) => setForceLocal(e.target.checked)}
-            />
-            Paksa classifier lokal (skip Clef)
-          </label>
-        </fieldset>
-
-        <button
-          type="submit"
-          disabled={loading}
-          className="bg-[var(--accent)] px-6 py-3 font-medium text-[var(--bg0)] transition hover:brightness-110 disabled:opacity-50"
-        >
-          {loading ? "Menganalisis…" : "Analisis kelayakan"}
-        </button>
-      </form>
-
-      {error && (
-        <p className="mt-8 border border-[var(--bad)]/40 bg-[var(--bad)]/10 px-4 py-3 text-sm text-[#ffb4a2]">
-          {error}
-        </p>
-      )}
-
-      {result && (
-        <div className="mt-12">
-          <ResultCard result={result} />
+        <div ref={resultRef} className="lg:sticky lg:top-8 lg:max-h-[calc(100vh-4rem)] lg:self-start lg:overflow-y-auto">
+          <div className="rounded-xl border border-[var(--line)] bg-white/[0.02] p-5 sm:p-6">
+            {error && (
+              <div className="rounded-md border border-[var(--bad)]/50 bg-[var(--bad)]/10 px-4 py-3 text-sm text-[#ffb4a2]">
+                {error}
+              </div>
+            )}
+            {loading && <LoadingState hasMedia={!!file} />}
+            {!loading && !error && result && <ResultCard result={result} />}
+            {!loading && !error && !result && <EmptyState />}
+          </div>
         </div>
-      )}
+      </div>
     </main>
+  );
+}
+
+function StatusBar({ health, failed }: { health: HealthResponse | null; failed: boolean }) {
+  if (failed) {
+    return (
+      <p className="rounded-full border border-[var(--bad)]/50 px-3 py-1 text-xs text-[#ffb4a2]">
+        Backend offline
+      </p>
+    );
+  }
+  if (!health) return null;
+  const items = [
+    { label: "ffmpeg", ok: health.ffmpeg_ok && health.ffprobe_ok },
+    { label: "Clef", ok: health.clef_configured },
+    { label: "Fallback lokal", ok: health.local_fallback },
+  ];
+  return (
+    <div className="flex flex-wrap gap-2 text-xs">
+      {items.map((i) => (
+        <span
+          key={i.label}
+          className="flex items-center gap-1.5 rounded-full border border-[var(--line)] px-3 py-1 text-[var(--muted)]"
+        >
+          <span
+            className="h-1.5 w-1.5 rounded-full"
+            style={{ background: i.ok ? "var(--ok)" : "var(--muted)" }}
+          />
+          {i.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function EmptyState() {
+  return (
+    <div className="flex min-h-72 flex-col items-center justify-center text-center">
+      <p className="font-display text-xl">Hasil akan muncul di sini</p>
+      <p className="mt-2 max-w-xs text-sm text-[var(--muted)]">
+        Kamu akan melihat status kelayakan, pelanggaran yang terdeteksi, daftar perbaikan, dan
+        nilai media dari ffmpeg.
+      </p>
+    </div>
+  );
+}
+
+function LoadingState({ hasMedia }: { hasMedia: boolean }) {
+  return (
+    <div className="space-y-4" aria-live="polite">
+      <p className="text-sm text-[var(--muted)]">
+        {hasMedia
+          ? "Mengekstrak frame dengan ffmpeg dan menjalankan classifier…"
+          : "Menjalankan classifier…"}
+      </p>
+      {[80, 55, 70, 40].map((w) => (
+        <div
+          key={w}
+          className="h-4 animate-pulse rounded bg-white/10"
+          style={{ width: `${w}%` }}
+        />
+      ))}
+      <p className="text-xs text-[var(--muted)]">
+        Analisis pertama dengan model lokal bisa lebih lama karena model sedang diunduh.
+      </p>
+    </div>
   );
 }

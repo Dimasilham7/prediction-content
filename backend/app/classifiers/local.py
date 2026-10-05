@@ -9,6 +9,8 @@ from typing import Any
 
 from PIL import Image
 
+from app.rules import flagged_hashtags
+
 logger = logging.getLogger(__name__)
 
 TEXT_MODEL = "unitary/multilingual-toxic-xlm-roberta"
@@ -153,9 +155,8 @@ def _heuristic_caption(caption: str, hashtags: str) -> dict[str, float]:
         "100% menang",
         "cepat kaya",
     ]
-    banned_tags = ["#xxx", "#nude", "#onlyfans", "#porn", "#judi", "#slotgacor", "#togel"]
     clickbait = any(m in text for m in spam_markers)
-    hashtag_hit = any(t in text for t in banned_tags)
+    hashtag_hit = bool(flagged_hashtags(hashtags))
     return {
         "caption_clickbait_spam": 0.85 if clickbait else 0.12,
         "hashtag_terlarang": 0.9 if hashtag_hit else 0.08,

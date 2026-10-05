@@ -40,6 +40,25 @@ CATEGORY_FIXES: dict[str, str] = {
 
 SEVERITY_LABELS = ["aman", "ringan", "berat", "banned"]
 
+RISKY_HASHTAGS = {
+    "#xxx",
+    "#nude",
+    "#onlyfans",
+    "#porn",
+    "#judi",
+    "#slotgacor",
+    "#slot",
+    "#togel",
+    "#judol",
+    "#gacor",
+    "#maxwin",
+}
+
+
+def flagged_hashtags(hashtags: str) -> list[str]:
+    tags = [t.strip().lower() for t in (hashtags or "").replace(",", " ").split() if t.startswith("#")]
+    return [t for t in dict.fromkeys(tags) if t in RISKY_HASHTAGS]
+
 
 def severity_from_score(score_answer: Any) -> Severity:
     if isinstance(score_answer, dict):
@@ -89,9 +108,9 @@ def build_caption_issues(answers: dict[str, Any], hashtags: str) -> list[str]:
     if noul_prob(answers.get("caption_clickbait_spam")) >= 0.55:
         issues.append("Caption terdeteksi clickbait/spam atau engagement bait.")
     if noul_prob(answers.get("hashtag_terlarang")) >= 0.55:
-        tag_preview = (hashtags or "").strip()[:80]
-        if tag_preview:
-            issues.append(f"Hashtag berisiko / dibatasi: {tag_preview}")
+        flagged = flagged_hashtags(hashtags)
+        if flagged:
+            issues.append(f"Hashtag berisiko / dibatasi: {' '.join(flagged)}")
         else:
             issues.append("Hashtag terdeteksi berisiko atau dibatasi platform.")
     if noul_prob(answers.get("teks_kasar_di_media")) >= 0.55:
@@ -105,9 +124,12 @@ def build_violations(
     answers: dict[str, Any],
     *,
     sample_timestamps: list[float] | None = None,
+    verdict: str | None = None,
 ) -> list[Violation]:
     category, prob, _ = choice_info(answers.get("kategori_pelanggaran"))
     severity = severity_from_score(answers.get("tingkat_keparahan"))
+    if verdict == "tidak_layak" and severity in {"aman", "ringan"}:
+        severity = "berat"
     evidence = None
     if sample_timestamps:
         mid = sample_timestamps[len(sample_timestamps) // 2]
@@ -142,13 +164,15 @@ def build_violations(
 
 def rules_suggestions(violations: list[Violation], caption_issues: list[str]) -> list[str]:
     suggestions: list[str] = []
+    has_spam_violation = any(v.category == "penipuan_spam" for v in violations)
     for v in violations:
         suggestions.append(v.fix)
     for issue in caption_issues:
         if "Hashtag" in issue:
             suggestions.append("Ganti/hapus hashtag berisiko; pakai tag relevan dan aman.")
         elif "clickbait" in issue.lower() or "spam" in issue.lower():
-            suggestions.append("Tulis ulang caption tanpa janji palsu atau CTA spam.")
+            if not has_spam_violation:
+                suggestions.append("Tulis ulang caption tanpa janji palsu atau CTA spam.")
         elif "18" in issue:
             suggestions.append("Pertimbangkan age gate / ubah framing agar lebih aman untuk semua usia.")
         else:
