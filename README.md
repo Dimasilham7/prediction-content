@@ -5,7 +5,7 @@ Aplikasi fullstack untuk memprediksi apakah konten **Instagram / TikTok** layak 
 - **Decision agent (pilih di UI):** [Cloudflare Clef](https://huggingface.co/Cloudflare/clef) · [Drex (Nace AI)](https://huggingface.co/nace-ai/drex-dlm) · classifier lokal  
 - **Fallback:** model lokal (`toxic` text + NSFW image) jika Clef/Drex gagal  
 - **Media values:** `ffprobe` (durasi, resolusi, fps, bitrate, codec, …) + `ffmpeg` (ekstrak frame)  
-- **Saran perbaikan:** rules (default) · opsional **OpenAI** / **Claude** / Workers AI, dengan **temperature** yang bisa diubah di UI  
+- **Judge → orchestrator:** Clef/Drex/lokal menilai policy + kualitas (estetika, hook, CTA, pacing, caption); **Rules** / **Claude** / **OpenAI** menulis saran kreatif + timeline detik video (pola [Jev-as-a-Judge](https://academy.dair.ai/labs/jev-as-a-judge-for-agent-evals))  
 
 Semua tools, cache, dan model diarahkan ke **`D:\devtools`** (bukan C:).
 

@@ -75,6 +75,103 @@ def _get_nsfw_pipe():
         return None
 
 
+def _score_answer(score: float, legend: list[str]) -> dict[str, Any]:
+    """Approximate a SystemOne score answer from an expected value 0..len-1."""
+    n = max(1, len(legend))
+    score = max(0.0, min(float(n - 1), float(score)))
+    # triangular-ish mass around score
+    probs = []
+    for i in range(n):
+        dist = abs(i - score)
+        probs.append(max(0.05, 1.0 / (1.0 + dist * 2.2)))
+    total = sum(probs)
+    probs = [p / total for p in probs]
+    return {
+        "score": score,
+        "confidence": max(probs),
+        "legend": legend,
+        "probabilities": probs,
+    }
+
+
+def _quality_from_heuristics(
+    *,
+    caption: str,
+    hashtags: str,
+    image_paths: list[Path],
+    spam_p: float,
+    nsfw: float,
+) -> dict[str, Any]:
+    cap = (caption or "").strip()
+    tags = (hashtags or "").strip()
+    # caption quality: short/spam → low
+    if not cap:
+        cap_score = 0.4
+    elif spam_p >= 0.7:
+        cap_score = 0.6
+    elif len(cap) < 40:
+        cap_score = 1.2
+    else:
+        cap_score = 2.2
+
+    has_media = bool(image_paths)
+    aesthetic = 1.1 if has_media else 0.8
+    if nsfw > 0.5:
+        aesthetic = 0.5
+    hook = 1.0 if (cap or has_media) else 0.3
+    if any(w in cap.lower() for w in ("tips", "cara", "jangan", "sebelum", "?")):
+        hook = min(3.0, hook + 0.8)
+    cta = 0.5
+    if any(w in cap.lower() for w in ("simpan", "ikuti", "komen", "comment", "swipe")):
+        cta = 2.2
+    elif spam_p >= 0.7:
+        cta = 1.0  # spammy CTA exists but low quality
+    pacing = 1.5 if has_media else 1.0
+    need_fix = 0.75 if (cap_score < 1.5 or aesthetic < 1.4 or hook < 1.4 or cta < 1.4) else 0.25
+
+    legends = {
+        "estetika_visual": [
+            "Lemah",
+            "Cukup",
+            "Baik",
+            "Sangat kuat",
+        ],
+        "hook_awal": [
+            "Tidak ada hook",
+            "Hook lemah",
+            "Hook cukup",
+            "Hook kuat",
+        ],
+        "cta_kejelasan": [
+            "Tidak ada CTA",
+            "CTA samar/spammy",
+            "CTA jelas timing kurang",
+            "CTA jelas & tepat",
+        ],
+        "pacing_edit": [
+            "Monoton",
+            "Agak lambat",
+            "Cukup",
+            "Ritme kuat",
+        ],
+        "kualitas_caption": [
+            "Kosong/tidak membantu",
+            "Generik",
+            "Jelas relevan",
+            "Hook+nilai+CTA",
+        ],
+    }
+    return {
+        "estetika_visual": _score_answer(aesthetic, legends["estetika_visual"]),
+        "hook_awal": _score_answer(hook, legends["hook_awal"]),
+        "cta_kejelasan": _score_answer(cta, legends["cta_kejelasan"]),
+        "pacing_edit": _score_answer(pacing, legends["pacing_edit"]),
+        "kualitas_caption": _score_answer(cap_score, legends["kualitas_caption"]),
+        "perlu_perbaikan_konten": need_fix,
+        "_hashtags_len": len(tags),  # unused marker ignored by judge readers
+    }
+
+
 def _empty_answers() -> dict[str, Any]:
     return {
         "layak_tampil": 0.7,
@@ -183,7 +280,6 @@ def run_local(
         text_scores["nudity_sexual"] = max(text_scores.get("nudity_sexual", 0.0), nsfw)
 
     if not text_scores:
-        # still adjust layak based on heuristics
         risk = max(heuristics.values())
         answers["layak_tampil"] = max(0.05, 1.0 - risk)
         if risk > 0.7:
@@ -198,11 +294,19 @@ def run_local(
                 "legend": ["aman", "ringan", "berat", "banned"],
                 "probabilities": [0.1, 0.45, 0.35, 0.1],
             }
+        q = _quality_from_heuristics(
+            caption=caption,
+            hashtags=hashtags,
+            image_paths=image_paths,
+            spam_p=heuristics["caption_clickbait_spam"],
+            nsfw=nsfw,
+        )
+        q.pop("_hashtags_len", None)
+        answers.update(q)
         return answers
 
     top_cat, top_p = max(text_scores.items(), key=lambda kv: kv[1])
     probs = {**{k: 0.02 for k in text_scores}, top_cat: top_p, "none": max(0.01, 1.0 - top_p)}
-    # normalize lightly
     total = sum(probs.values())
     probs = {k: v / total for k, v in probs.items()}
 
@@ -234,4 +338,13 @@ def run_local(
         "legend": ["aman", "ringan", "berat", "banned"],
         "probabilities": sev_probs,
     }
+    q = _quality_from_heuristics(
+        caption=caption,
+        hashtags=hashtags,
+        image_paths=image_paths,
+        spam_p=heuristics["caption_clickbait_spam"],
+        nsfw=nsfw,
+    )
+    q.pop("_hashtags_len", None)
+    answers.update(q)
     return answers

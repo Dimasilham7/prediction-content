@@ -28,6 +28,30 @@ export type Violation = {
   fix: string;
 };
 
+export type QualityScores = {
+  estetika_visual: number | null;
+  hook_awal: number | null;
+  cta_kejelasan: number | null;
+  pacing_edit: number | null;
+  kualitas_caption: number | null;
+  perlu_perbaikan_konten: number | null;
+};
+
+export type ContentTip = {
+  area: string;
+  title: string;
+  detail: string;
+  priority: "tinggi" | "sedang" | "rendah";
+};
+
+export type TimelineCue = {
+  at_sec: number;
+  end_sec: number | null;
+  action: string;
+  detail: string;
+  kind: string;
+};
+
 export type AnalyzeResponse = {
   verdict: Verdict;
   confidence: number;
@@ -35,6 +59,9 @@ export type AnalyzeResponse = {
   violations: Violation[];
   caption_issues: string[];
   suggestions: string[];
+  content_tips: ContentTip[];
+  timeline_cues: TimelineCue[];
+  quality: QualityScores | null;
   engine: string;
   suggestion_provider: SuggestionProvider;
   temperature: number | null;

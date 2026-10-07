@@ -3,10 +3,12 @@
 import {
   ENGINE_LABELS,
   PROVIDER_LABELS,
+  QUALITY_LABELS,
   SEVERITY_LABELS,
+  TIP_AREA_LABELS,
   categoryLabel,
 } from "@/lib/labels";
-import type { AnalyzeResponse } from "@/lib/types";
+import type { AnalyzeResponse, ContentTip, TimelineCue } from "@/lib/types";
 
 const verdictStyle: Record<
   AnalyzeResponse["verdict"],
@@ -14,13 +16,13 @@ const verdictStyle: Record<
 > = {
   layak: {
     label: "Layak tampil",
-    hint: "Tidak ada pelanggaran yang terdeteksi.",
+    hint: "Tidak ada pelanggaran berat — cek saran kreatif di bawah.",
     color: "var(--ok)",
     bg: "rgba(63,157,106,0.14)",
   },
   perlu_revisi: {
     label: "Perlu revisi",
-    hint: "Masih bisa tayang setelah beberapa bagian diperbaiki.",
+    hint: "Masih bisa tayang setelah policy/kreatif diperbaiki.",
     color: "var(--warn)",
     bg: "rgba(212,160,23,0.14)",
   },
@@ -39,6 +41,12 @@ const severityColor: Record<string, string> = {
   banned: "var(--bad)",
 };
 
+const priorityColor: Record<string, string> = {
+  tinggi: "var(--bad)",
+  sedang: "var(--warn)",
+  rendah: "var(--accent)",
+};
+
 function formatBytes(n: number | null | undefined) {
   if (!n) return "—";
   if (n < 1024) return `${n} B`;
@@ -51,12 +59,33 @@ function formatBitrate(n: number | null | undefined) {
   return `${Math.round(n / 1000)} kbps`;
 }
 
+function formatCueTime(cue: TimelineCue) {
+  const start = `${cue.at_sec.toFixed(1)}s`;
+  if (cue.end_sec != null) return `${start}–${cue.end_sec.toFixed(1)}s`;
+  return start;
+}
+
 export function ResultCard({ result }: { result: AnalyzeResponse }) {
   const v = verdictStyle[result.verdict];
   const probs = Object.entries(result.category_probabilities)
     .filter(([cat]) => cat !== "none")
     .sort((a, b) => b[1] - a[1]);
   const media = result.media;
+  const tips = result.content_tips ?? [];
+  const cues = result.timeline_cues ?? [];
+  const qualityEntries = result.quality
+    ? (
+        [
+          "estetika_visual",
+          "hook_awal",
+          "cta_kejelasan",
+          "pacing_edit",
+          "kualitas_caption",
+        ] as const
+      )
+        .map((k) => [k, result.quality![k]] as const)
+        .filter(([, val]) => val != null)
+    : [];
 
   return (
     <div className="animate-rise space-y-7">
@@ -85,18 +114,57 @@ export function ResultCard({ result }: { result: AnalyzeResponse }) {
           </div>
         </div>
         <p className="mt-4 text-xs text-[var(--muted)]">
-          {result.platform} · {ENGINE_LABELS[result.engine] ?? result.engine} ·
-          saran via {PROVIDER_LABELS[result.suggestion_provider]}
+          {result.platform} · judge {ENGINE_LABELS[result.engine] ?? result.engine} ·
+          orchestrator {PROVIDER_LABELS[result.suggestion_provider]}
           {result.temperature != null &&
             result.suggestion_provider !== "rules" &&
             ` · temperature ${result.temperature}`}
         </p>
       </div>
 
-      <Section title="Yang harus dibetulkan">
+      {cues.length > 0 && (
+        <Section title="Timeline saran (detik video)">
+          <p className="mb-3 text-xs text-[var(--muted)]">
+            Contoh arahan edit per detik — dari judge + orchestrator.
+          </p>
+          <ul className="space-y-2">
+            {cues.map((cue, i) => (
+              <li
+                key={`${cue.at_sec}-${cue.action}-${i}`}
+                className="flex gap-3 rounded-md border border-[var(--line)] px-3 py-3"
+              >
+                <div className="shrink-0 rounded bg-[var(--accent)]/20 px-2 py-1 text-center">
+                  <p className="font-mono text-sm font-semibold text-[var(--accent)]">
+                    {formatCueTime(cue)}
+                  </p>
+                  <p className="text-[10px] uppercase text-[var(--muted)]">
+                    {TIP_AREA_LABELS[cue.kind] ?? cue.kind}
+                  </p>
+                </div>
+                <div>
+                  <p className="font-medium">{cue.action}</p>
+                  <p className="mt-0.5 text-sm text-[var(--fg)]/85">{cue.detail}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
+
+      {tips.length > 0 && (
+        <Section title="Saran konten (kreatif)">
+          <ul className="space-y-2">
+            {tips.map((tip, i) => (
+              <TipRow key={`${tip.title}-${i}`} tip={tip} />
+            ))}
+          </ul>
+        </Section>
+      )}
+
+      <Section title="Checklist perbaikan">
         <ol className="space-y-2">
           {result.suggestions.map((s, i) => (
-            <li key={s} className="flex gap-3">
+            <li key={`${i}-${s.slice(0, 24)}`} className="flex gap-3">
               <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--accent)] text-xs font-semibold text-[var(--bg0)]">
                 {i + 1}
               </span>
@@ -105,6 +173,38 @@ export function ResultCard({ result }: { result: AnalyzeResponse }) {
           ))}
         </ol>
       </Section>
+
+      {qualityEntries.length > 0 && (
+        <Section title="Skor kualitas (judge)">
+          <ul className="space-y-3">
+            {qualityEntries.map(([key, val]) => {
+              const p = val ?? 0;
+              return (
+                <li key={key}>
+                  <div className="mb-1 flex justify-between text-sm">
+                    <span>{QUALITY_LABELS[key] ?? key}</span>
+                    <span className="text-[var(--muted)]">{(p * 100).toFixed(0)}%</span>
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+                    <div
+                      className="h-full rounded-full transition-all duration-700"
+                      style={{
+                        width: `${Math.min(100, p * 100)}%`,
+                        background:
+                          p >= 0.66
+                            ? "var(--ok)"
+                            : p >= 0.4
+                              ? "var(--warn)"
+                              : "var(--bad)",
+                      }}
+                    />
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </Section>
+      )}
 
       {result.violations.length > 0 && (
         <Section title="Pelanggaran terdeteksi">
@@ -117,9 +217,7 @@ export function ResultCard({ result }: { result: AnalyzeResponse }) {
                 <div>
                   <p className="font-medium">{categoryLabel(vItem.category)}</p>
                   {vItem.evidence && (
-                    <p className="text-xs text-[var(--muted)]">
-                      Bukti: {vItem.evidence}
-                    </p>
+                    <p className="text-xs text-[var(--muted)]">Bukti: {vItem.evidence}</p>
                   )}
                 </div>
                 <div className="text-right text-sm">
@@ -159,9 +257,7 @@ export function ResultCard({ result }: { result: AnalyzeResponse }) {
               <li key={cat}>
                 <div className="mb-1 flex justify-between text-sm">
                   <span>{categoryLabel(cat)}</span>
-                  <span className="text-[var(--muted)]">
-                    {(p * 100).toFixed(0)}%
-                  </span>
+                  <span className="text-[var(--muted)]">{(p * 100).toFixed(0)}%</span>
                 </div>
                 <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
                   <div
@@ -221,6 +317,26 @@ export function ResultCard({ result }: { result: AnalyzeResponse }) {
         </Section>
       )}
     </div>
+  );
+}
+
+function TipRow({ tip }: { tip: ContentTip }) {
+  return (
+    <li className="rounded-md border border-[var(--line)] px-3 py-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs uppercase tracking-wider text-[var(--muted)]">
+          {TIP_AREA_LABELS[tip.area] ?? tip.area}
+        </span>
+        <span
+          className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+          style={{ color: priorityColor[tip.priority], background: "rgba(255,255,255,0.06)" }}
+        >
+          {tip.priority}
+        </span>
+      </div>
+      <p className="mt-1 font-medium">{tip.title}</p>
+      <p className="mt-0.5 text-sm text-[var(--fg)]/85">{tip.detail}</p>
+    </li>
   );
 }
 

@@ -11,7 +11,7 @@ from app.classifiers.drex import DrexError, run_drex
 from app.classifiers.local import run_local
 from app.config import Settings
 from app.preprocess import cleanup_work, media_summary_for_state, prepare_media
-from app.recommend import generate_suggestions
+from app.recommend import generate_coaching
 from app.rules import build_caption_issues, build_violations, choice_info, noul_prob, severity_from_score
 from app.schemas import AnalyzeResponse, DecisionAgent, MediaProbe, SuggestionProvider, Verdict
 
@@ -154,7 +154,14 @@ async def analyze_content(
                 "Drex: media masuk sebagai ringkasan metadata/frame (teks), bukan vision seperti Clef.",
             ]
 
-        suggestions, used_provider, used_temp = await generate_suggestions(
+        (
+            suggestions,
+            content_tips,
+            timeline_cues,
+            quality,
+            used_provider,
+            used_temp,
+        ) = await generate_coaching(
             settings=settings,
             provider=suggestion_provider,
             temperature=temperature,
@@ -164,6 +171,7 @@ async def analyze_content(
             violations=violations,
             caption_issues=caption_issues,
             media_summary=summary,
+            answers=answers if isinstance(answers, dict) else {},
             openai_api_key=openai_api_key,
             anthropic_api_key=anthropic_api_key,
         )
@@ -175,6 +183,9 @@ async def analyze_content(
             violations=violations,
             caption_issues=caption_issues,
             suggestions=suggestions,
+            content_tips=content_tips,
+            timeline_cues=timeline_cues,
+            quality=quality,
             engine=engine,
             suggestion_provider=used_provider,
             temperature=used_temp,

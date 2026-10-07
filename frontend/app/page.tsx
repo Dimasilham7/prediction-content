@@ -363,8 +363,9 @@ export default function HomePage() {
             {showAdvanced && (
               <div className="space-y-4 border-t border-[var(--line)] px-4 py-4">
                 <p className="text-xs text-[var(--muted)]">
-                  Rules gratis dan tanpa API. OpenAI / Claude dipakai hanya jika kamu isi API key
-                  sendiri — key tidak disimpan di server.
+                  Decision agent = judge (policy + skor kualitas). Claude / OpenAI = orchestrator
+                  yang menulis saran kreatif (estetika, CTA di detik X, caption). Rules = tanpa
+                  API. Key tidak disimpan di server.
                 </p>
                 <div>
                   <span className="text-sm text-[var(--muted)]">Provider</span>

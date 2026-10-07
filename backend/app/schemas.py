@@ -40,6 +40,34 @@ class Violation(BaseModel):
     fix: str
 
 
+class QualityScores(BaseModel):
+    """Normalized 0..1 creative-quality scores from the decision judge."""
+
+    estetika_visual: float | None = None
+    hook_awal: float | None = None
+    cta_kejelasan: float | None = None
+    pacing_edit: float | None = None
+    kualitas_caption: float | None = None
+    perlu_perbaikan_konten: float | None = None
+
+
+class ContentTip(BaseModel):
+    area: str
+    title: str
+    detail: str
+    priority: Literal["tinggi", "sedang", "rendah"] = "sedang"
+
+
+class TimelineCue(BaseModel):
+    """Timestamped coaching for video (e.g. CTA at second X)."""
+
+    at_sec: float
+    end_sec: float | None = None
+    action: str
+    detail: str
+    kind: str = "umum"
+
+
 class AnalyzeResponse(BaseModel):
     verdict: Verdict
     confidence: float
@@ -47,6 +75,9 @@ class AnalyzeResponse(BaseModel):
     violations: list[Violation] = Field(default_factory=list)
     caption_issues: list[str] = Field(default_factory=list)
     suggestions: list[str] = Field(default_factory=list)
+    content_tips: list[ContentTip] = Field(default_factory=list)
+    timeline_cues: list[TimelineCue] = Field(default_factory=list)
+    quality: QualityScores | None = None
     engine: str
     suggestion_provider: SuggestionProvider = "rules"
     temperature: float | None = None
