@@ -21,8 +21,15 @@ export const SEVERITY_LABELS: Record<string, string> = {
 
 export const ENGINE_LABELS: Record<string, string> = {
   clef: "Clef (Workers AI)",
+  drex: "Drex (Nace AI)",
   local: "Classifier lokal",
   local_fallback: "Classifier lokal (fallback)",
+};
+
+export const AGENT_LABELS: Record<string, string> = {
+  clef: "Clef",
+  drex: "Drex",
+  local: "Lokal",
 };
 
 export const PROVIDER_LABELS: Record<string, string> = {

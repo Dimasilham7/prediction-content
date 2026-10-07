@@ -16,6 +16,13 @@ class Settings(BaseSettings):
     clef_model: str = "@cf/cloudflare/clef"
     clef_model_name: str = "clef"
 
+    # Drex (Nace AI) — SystemOne-compatible decision model
+    # Hosted: https://drex.nace.ai  | Local e.g. http://127.0.0.1:8097
+    drex_api_key: str = ""
+    drex_base_url: str = "https://drex.nace.ai"
+    drex_model: str = "drex-v1.0"
+    default_decision_agent: str = "clef"
+
     use_local_fallback: bool = True
 
     openai_api_key: str = ""
@@ -47,6 +54,14 @@ class Settings(BaseSettings):
     @property
     def clef_configured(self) -> bool:
         return bool(self.cf_account_id and self.cf_api_token)
+
+    @property
+    def drex_configured(self) -> bool:
+        """Hosted needs a key; local base URL without nace.ai is treated as ready."""
+        base = (self.drex_base_url or "").lower()
+        if "drex.nace.ai" in base:
+            return bool(self.drex_api_key)
+        return bool(self.drex_base_url)
 
     @property
     def cors_origin_list(self) -> list[str]:

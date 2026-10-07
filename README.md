@@ -2,8 +2,8 @@
 
 Aplikasi fullstack untuk memprediksi apakah konten **Instagram / TikTok** layak tampil, apa yang salah, dan apa yang harus dibetulkan.
 
-- **Classifier utama:** [Cloudflare Clef](https://huggingface.co/Cloudflare/clef) via Workers AI  
-- **Fallback:** model lokal (`toxic` text + NSFW image)  
+- **Decision agent (pilih di UI):** [Cloudflare Clef](https://huggingface.co/Cloudflare/clef) · [Drex (Nace AI)](https://huggingface.co/nace-ai/drex-dlm) · classifier lokal  
+- **Fallback:** model lokal (`toxic` text + NSFW image) jika Clef/Drex gagal  
 - **Media values:** `ffprobe` (durasi, resolusi, fps, bitrate, codec, …) + `ffmpeg` (ekstrak frame)  
 - **Saran perbaikan:** rules (default) · opsional **OpenAI** / **Claude** / Workers AI, dengan **temperature** yang bisa diubah di UI  
 
@@ -57,7 +57,9 @@ Tanpa kredensial Cloudflare, set `USE_LOCAL_FALLBACK=true` (default) — analisi
 | Key | Keterangan |
 |-----|------------|
 | `CF_ACCOUNT_ID` / `CF_API_TOKEN` | Workers AI untuk Clef |
-| `USE_LOCAL_FALLBACK` | `true` = fallback otomatis jika Clef gagal |
+| `DREX_API_KEY` / `DREX_BASE_URL` / `DREX_MODEL` | Drex hosted (`https://drex.nace.ai`) atau server lokal SystemOne |
+| `DEFAULT_DECISION_AGENT` | `clef` \| `drex` \| `local` |
+| `USE_LOCAL_FALLBACK` | `true` = fallback otomatis jika Clef/Drex gagal |
 | `OPENAI_API_KEY` | Opsional (boleh diisi dari UI per request) |
 | `ANTHROPIC_API_KEY` | Opsional (Claude) |
 | `DEFAULT_TEMPERATURE` | Default slider temperature saran |
@@ -78,7 +80,7 @@ Buka [http://localhost:3000](http://localhost:3000). API default: `http://localh
 
 ### `GET /api/health`
 
-Status ffmpeg, Clef, provider saran.
+Status ffmpeg, Clef, Drex, provider saran.
 
 ### `POST /api/analyze` (multipart)
 
@@ -87,10 +89,13 @@ Field:
 - `platform`: `instagram` \| `tiktok` \| `both`
 - `caption`, `hashtags`
 - `file`: gambar/video (opsional)
+- `decision_agent`: `clef` \| `drex` \| `local`
 - `suggestion_provider`: `rules` \| `openai` \| `claude` \| `workers_ai`
 - `temperature`: `0`–`2` (Claude di-clamp ke `1`)
-- `openai_api_key` / `anthropic_api_key`: opsional per request
-- `force_local`: paksa skip Clef
+- `openai_api_key` / `anthropic_api_key` / `drex_api_key`: opsional per request
+- `force_local`: paksa agent lokal (legacy; lebih baik pakai `decision_agent=local`)
+
+**Catatan Drex:** API SystemOne Drex berorientasi teks; media dianalisis lewat ringkasan ffmpeg di `state`. Clef tetap bisa vision (frame/gambar). Lihat [pengumuman Drex 1.1](https://x.com/NaceAI/status/2107531163866661105).
 
 Response memuat `verdict`, `violations`, `suggestions`, dan objek `media` berisi nilai dari ffmpeg/ffprobe.
 

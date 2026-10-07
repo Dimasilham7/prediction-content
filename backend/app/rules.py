@@ -67,6 +67,13 @@ def severity_from_score(score_answer: Any) -> Severity:
         if isinstance(probs, list) and probs:
             idx = max(range(len(probs)), key=lambda i: probs[i])
             return SEVERITY_LABELS[min(idx, 3)]  # type: ignore[return-value]
+        # Drex returns probabilities as {"0": p0, "1": p1, ...}
+        if isinstance(probs, dict) and probs:
+            idx = max(probs.keys(), key=lambda k: float(probs[k]))
+            try:
+                return SEVERITY_LABELS[min(int(idx), 3)]  # type: ignore[return-value]
+            except (TypeError, ValueError):
+                pass
         if isinstance(score, (int, float)):
             if score < 0.75:
                 return "aman"
@@ -82,6 +89,9 @@ def noul_prob(answer: Any) -> float:
     if isinstance(answer, (int, float)):
         return float(answer)
     if isinstance(answer, dict):
+        # Drex / SystemOne: {"type": "noul", "noul": 0.85}
+        if "noul" in answer and isinstance(answer["noul"], (int, float)):
+            return float(answer["noul"])
         if "probability" in answer:
             return float(answer["probability"])
         if "probabilities" in answer and isinstance(answer["probabilities"], dict):

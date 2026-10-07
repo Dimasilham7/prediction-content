@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.preprocess import PreprocessError, tool_ok
-from app.schemas import AnalyzeResponse, HealthResponse, SuggestionProvider
+from app.schemas import AnalyzeResponse, DecisionAgent, HealthResponse, SuggestionProvider
 from app.service import analyze_content
 
 logging.basicConfig(level=logging.INFO)
@@ -18,8 +18,11 @@ settings = get_settings()
 
 app = FastAPI(
     title="Prediction Content",
-    description="Prediksi kelayakan konten IG/TikTok (Clef + local fallback + saran opsional)",
-    version="0.1.0",
+    description=(
+        "Prediksi kelayakan konten IG/TikTok — decision agent Clef / Drex / lokal "
+        "+ saran Rules/Claude/OpenAI"
+    ),
+    version="0.2.0",
 )
 
 app.add_middleware(
@@ -33,27 +36,23 @@ app.add_middleware(
 
 @app.get("/api/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
-    providers = ["rules"]
-    if settings.openai_api_key:
-        providers.append("openai")
-    if settings.anthropic_api_key:
-        providers.append("claude")
-    if settings.clef_configured:
-        providers.append("workers_ai")
-    # Always advertise optional providers (keys may be sent per-request from UI)
-    for p in ("openai", "claude", "workers_ai"):
-        if p not in providers:
-            providers.append(p)
+    providers = ["rules", "openai", "claude", "workers_ai"]
+    agents = ["clef", "drex", "local"]
 
     return HealthResponse(
         status="ok",
         clef_configured=settings.clef_configured,
+        drex_configured=settings.drex_configured,
         local_fallback=settings.use_local_fallback,
         ffmpeg_ok=tool_ok(settings.ffmpeg_path),
         ffprobe_ok=tool_ok(settings.ffprobe_path),
         openai_configured=bool(settings.openai_api_key),
         claude_configured=bool(settings.anthropic_api_key),
+        decision_agents=agents,
         suggestion_providers=providers,
+        default_decision_agent=settings.default_decision_agent
+        if settings.default_decision_agent in agents
+        else "clef",
     )
 
 
@@ -62,20 +61,25 @@ async def analyze(
     platform: Annotated[str, Form()] = "tiktok",
     caption: Annotated[str, Form()] = "",
     hashtags: Annotated[str, Form()] = "",
+    decision_agent: Annotated[str, Form()] = "clef",
     suggestion_provider: Annotated[str, Form()] = "rules",
     temperature: Annotated[float, Form()] = 0.3,
     openai_api_key: Annotated[str, Form()] = "",
     anthropic_api_key: Annotated[str, Form()] = "",
+    drex_api_key: Annotated[str, Form()] = "",
     force_local: Annotated[bool, Form()] = False,
     file: UploadFile | None = File(None),
 ) -> AnalyzeResponse:
     if platform not in {"instagram", "tiktok", "both"}:
         raise HTTPException(400, "platform harus instagram | tiktok | both")
 
-    provider: SuggestionProvider
+    if decision_agent not in {"clef", "drex", "local"}:
+        raise HTTPException(400, "decision_agent harus clef | drex | local")
+    agent: DecisionAgent = decision_agent  # type: ignore[assignment]
+
     if suggestion_provider not in {"rules", "openai", "claude", "workers_ai"}:
         raise HTTPException(400, "suggestion_provider tidak valid")
-    provider = suggestion_provider  # type: ignore[assignment]
+    provider: SuggestionProvider = suggestion_provider  # type: ignore[assignment]
 
     file_bytes: bytes | None = None
     filename: str | None = None
@@ -97,10 +101,12 @@ async def analyze(
             hashtags=hashtags,
             file_bytes=file_bytes,
             filename=filename,
+            decision_agent=agent,
             suggestion_provider=provider,
             temperature=temperature,
             openai_api_key=openai_api_key or None,
             anthropic_api_key=anthropic_api_key or None,
+            drex_api_key=drex_api_key or None,
             force_local=force_local,
         )
     except PreprocessError as exc:

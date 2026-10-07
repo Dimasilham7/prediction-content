@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 Platform = Literal["instagram", "tiktok", "both"]
 Verdict = Literal["layak", "perlu_revisi", "tidak_layak"]
+DecisionAgent = Literal["clef", "drex", "local"]
 SuggestionProvider = Literal["rules", "openai", "claude", "workers_ai"]
 Severity = Literal["aman", "ringan", "berat", "banned"]
 
@@ -57,9 +58,12 @@ class AnalyzeResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     clef_configured: bool
+    drex_configured: bool
     local_fallback: bool
     ffmpeg_ok: bool
     ffprobe_ok: bool
     openai_configured: bool
     claude_configured: bool
+    decision_agents: list[str]
     suggestion_providers: list[str]
+    default_decision_agent: str = "clef"

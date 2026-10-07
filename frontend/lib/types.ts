@@ -1,4 +1,5 @@
 export type Verdict = "layak" | "perlu_revisi" | "tidak_layak";
+export type DecisionAgent = "clef" | "drex" | "local";
 export type SuggestionProvider = "rules" | "openai" | "claude" | "workers_ai";
 
 export type MediaProbe = {
@@ -45,10 +46,13 @@ export type AnalyzeResponse = {
 export type HealthResponse = {
   status: string;
   clef_configured: boolean;
+  drex_configured: boolean;
   local_fallback: boolean;
   ffmpeg_ok: boolean;
   ffprobe_ok: boolean;
   openai_configured: boolean;
   claude_configured: boolean;
+  decision_agents: string[];
   suggestion_providers: string[];
+  default_decision_agent: string;
 };

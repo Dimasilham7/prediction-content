@@ -2,7 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ResultCard } from "@/components/ResultCard";
-import type { AnalyzeResponse, HealthResponse, SuggestionProvider } from "@/lib/types";
+import type {
+  AnalyzeResponse,
+  DecisionAgent,
+  HealthResponse,
+  SuggestionProvider,
+} from "@/lib/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
@@ -17,6 +22,28 @@ const PLATFORMS: { id: Platform; label: string }[] = [
   { id: "both", label: "Keduanya" },
 ];
 
+const AGENTS: {
+  id: DecisionAgent;
+  label: string;
+  hint: string;
+}[] = [
+  {
+    id: "clef",
+    label: "Clef",
+    hint: "Cloudflare Workers AI · vision (gambar/frame)",
+  },
+  {
+    id: "drex",
+    label: "Drex",
+    hint: "Nace AI SystemOne · open source / hosted",
+  },
+  {
+    id: "local",
+    label: "Lokal",
+    hint: "Fallback offline · tanpa API decision model",
+  },
+];
+
 const PROVIDERS: { id: SuggestionProvider; label: string }[] = [
   { id: "rules", label: "Rules (tanpa API)" },
   { id: "openai", label: "OpenAI" },
@@ -26,6 +53,7 @@ const PROVIDERS: { id: SuggestionProvider; label: string }[] = [
 
 export default function HomePage() {
   const [platform, setPlatform] = useState<Platform>("tiktok");
+  const [agent, setAgent] = useState<DecisionAgent>("clef");
   const [caption, setCaption] = useState("");
   const [hashtags, setHashtags] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -34,7 +62,7 @@ export default function HomePage() {
   const [temperature, setTemperature] = useState(0.3);
   const [openaiKey, setOpenaiKey] = useState("");
   const [claudeKey, setClaudeKey] = useState("");
-  const [forceLocal, setForceLocal] = useState(false);
+  const [drexKey, setDrexKey] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,7 +75,16 @@ export default function HomePage() {
   useEffect(() => {
     fetch(`${API_BASE}/api/health`)
       .then((r) => r.json())
-      .then((d: HealthResponse) => setHealth(d))
+      .then((d: HealthResponse) => {
+        setHealth(d);
+        if (
+          d.default_decision_agent === "clef" ||
+          d.default_decision_agent === "drex" ||
+          d.default_decision_agent === "local"
+        ) {
+          setAgent(d.default_decision_agent);
+        }
+      })
       .catch(() => setHealthFailed(true));
   }, []);
 
@@ -76,11 +113,12 @@ export default function HomePage() {
     body.set("platform", platform);
     body.set("caption", caption);
     body.set("hashtags", hashtags);
+    body.set("decision_agent", agent);
     body.set("suggestion_provider", provider);
     body.set("temperature", String(temperature));
-    body.set("force_local", String(forceLocal));
     if (openaiKey.trim()) body.set("openai_api_key", openaiKey.trim());
     if (claudeKey.trim()) body.set("anthropic_api_key", claudeKey.trim());
+    if (drexKey.trim()) body.set("drex_api_key", drexKey.trim());
     if (file) body.set("file", file);
 
     try {
@@ -162,6 +200,70 @@ export default function HomePage() {
                 </button>
               ))}
             </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm text-[var(--muted)]">Decision agent</span>
+              {agent === "drex" && (
+                <span className="text-xs text-[var(--warn)]">teks + metadata media</span>
+              )}
+              {agent === "clef" && (
+                <span className="text-xs text-[var(--accent)]">vision + teks</span>
+              )}
+            </div>
+            <div className="mt-1.5 grid grid-cols-3 gap-1.5">
+              {AGENTS.map((a) => (
+                <button
+                  key={a.id}
+                  type="button"
+                  onClick={() => setAgent(a.id)}
+                  className={`rounded-md border px-2 py-2 text-left transition ${
+                    agent === a.id
+                      ? "border-[var(--accent)] bg-[var(--accent)]/15"
+                      : "border-[var(--line)] bg-white/[0.03] hover:border-[var(--accent)]/50"
+                  }`}
+                >
+                  <span
+                    className={`block text-sm font-medium ${
+                      agent === a.id ? "text-[var(--fg)]" : "text-[var(--muted)]"
+                    }`}
+                  >
+                    {a.label}
+                  </span>
+                  <span className="mt-0.5 block text-[10px] leading-snug text-[var(--muted)]">
+                    {a.hint}
+                  </span>
+                </button>
+              ))}
+            </div>
+            {agent === "drex" && (
+              <label className="mt-3 block">
+                <span className="text-sm text-[var(--muted)]">
+                  Drex API key{" "}
+                  <span className="text-[var(--muted)]/70">(opsional jika server lokal)</span>
+                </span>
+                <input
+                  type="password"
+                  autoComplete="off"
+                  className={inputClass}
+                  value={drexKey}
+                  onChange={(e) => setDrexKey(e.target.value)}
+                  placeholder="Bearer key dari drex.nace.ai — tidak disimpan"
+                />
+                <span className="mt-1 block text-xs text-[var(--muted)]">
+                  Open source:{" "}
+                  <a
+                    className="text-[var(--accent)] underline"
+                    href="https://huggingface.co/nace-ai/drex-dlm"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    nace-ai/drex-dlm
+                  </a>
+                </span>
+              </label>
+            )}
           </div>
 
           <div>
@@ -333,16 +435,6 @@ export default function HomePage() {
                     />
                   </label>
                 )}
-
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    className="accent-[var(--accent)]"
-                    checked={forceLocal}
-                    onChange={(e) => setForceLocal(e.target.checked)}
-                  />
-                  Paksa classifier lokal (lewati Clef)
-                </label>
               </div>
             )}
           </div>
@@ -390,6 +482,7 @@ function StatusBar({ health, failed }: { health: HealthResponse | null; failed: 
   const items = [
     { label: "ffmpeg", ok: health.ffmpeg_ok && health.ffprobe_ok },
     { label: "Clef", ok: health.clef_configured },
+    { label: "Drex", ok: health.drex_configured },
     { label: "Fallback lokal", ok: health.local_fallback },
   ];
   return (
